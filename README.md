@@ -43,7 +43,7 @@ tripvault/
 │   │   ├── components/
 │   │   └── App.jsx
 ├── server/              ← Node + Express backend
-│   ├── models/          ← User.js (Mongoose schema)
+│   ├── models/          ← User.js,Photo.js,Trip.js (Mongoose schema)
 │   ├── routes/          ← auth.js
 │   ├── middleware/      ← authMiddleware.js
 │   ├── .env             ← MONGO_URI, JWT_SECRET
@@ -139,66 +139,6 @@ Requires header: `Authorization: Bearer <token>`
 
 ---
 
-## ▲ Deploying to Vercel
-
-A MERN app has two parts that deploy separately: the **static frontend** and the **API backend**.
-
-### Option A — Deploy the frontend to Vercel (recommended for the client)
-
-1. Push your repo to GitHub.
-2. Go to [vercel.com/new](https://vercel.com/new) and import the repo.
-3. Set the **Root Directory** to `client`.
-4. Vercel auto-detects Vite — no build config needed.
-5. Add an environment variable `VITE_API_URL` pointing to your backend URL (e.g. `https://tripvault-api.onrender.com`).
-6. Update `client/src/pages/Login.jsx`, `Register.jsx`, and `Dashboard.jsx` to use `VITE_API_URL` as the axios base URL:
-   ```js
-   const API = import.meta.env.VITE_API_URL || '';
-   axios.post(`${API}/api/auth/login`, { ... })
-   ```
-7. Deploy.
-
-### Option B — Deploy the backend (Express)
-
-Vercel can run Express as serverless functions, but for a traditional Express server with MongoDB, we recommend deploying to a platform that supports long-running Node processes:
-
-| Platform | Free tier | Notes |
-|----------|-----------|-------|
-| **Render** | ✅ | Easiest — connects to your GitHub repo, runs `npm start` in `server/` |
-| **Railway** | ✅ | Similar to Render, great DX |
-| **Vercel** | ✅ | Requires restructuring to `/api` serverless functions |
-
-**Deploying the backend to Render (recommended):**
-1. Go to [render.com](https://render.com) → New → Web Service.
-2. Connect your GitHub repo.
-3. Set **Root Directory** to `server`.
-4. Build command: `npm install`
-5. Start command: `npm start`
-6. Add environment variables: `MONGO_URI`, `JWT_SECRET`, `PORT=5000`
-7. Deploy — you'll get a URL like `https://tripvault-api.onrender.com`.
-
-### Option C — Deploy the backend to Vercel as serverless functions
-
-If you want everything on Vercel, restructure the server into Vercel's `/api` format:
-
-1. Move `server/index.js` logic into individual files in `/api/auth/`:
-   ```
-   api/auth/register.js
-   api/auth/login.js
-   api/auth/me.js
-   ```
-2. Each file exports a serverless function:
-   ```js
-   import express from 'express';
-   import mongoose from 'mongoose';
-   // ... setup
-   export default function handler(req, res) { /* ... */ }
-   ```
-3. Add `vercel.json` at the repo root to route `/api/*` to these functions.
-4. Set environment variables (`MONGO_URI`, `JWT_SECRET`) in Vercel project settings.
-
-> See the [Vercel Express guide](https://vercel.com/guides/using-express-with-vercel) for details.
-
----
 
 ## 🔒 Security Notes
 
@@ -209,16 +149,6 @@ If you want everything on Vercel, restructure the server into Vercel's `/api` fo
 - ✅ `.env` is gitignored — secrets never reach GitHub.
 - ⚠️ The JWT is stored in `localStorage` (per the Week 1 brief). For production, consider `httpOnly` cookies.
 
----
-
-## 🗺️ Roadmap (Weeks 2–4)
-
-| Week | Feature | Status |
-|------|---------|--------|
-| **1** | Project setup & authentication | ✅ Complete |
-| **2** | Log trips (destinations, dates, stories) | 🔜 Upcoming |
-| **3** | Photo uploads & galleries | 🔜 Upcoming |
-| **4** | Share trips & discover others' memories | 🔜 Upcoming |
 
 ---
 
