@@ -2,6 +2,9 @@ import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import axios from 'axios'
 
+// Use the environment variable for production deployment or fallback to empty string (local dev proxy)
+const API_BASE_URL = import.meta.env.VITE_API_URL || ''
+
 export default function Register() {
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
@@ -16,7 +19,7 @@ export default function Register() {
     setLoading(true)
 
     try {
-      const { data } = await axios.post('/api/auth/register', {
+      const { data } = await axios.post(`${API_BASE_URL}/api/auth/register`, {
         name,
         email,
         password,
