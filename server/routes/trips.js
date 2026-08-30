@@ -1,6 +1,7 @@
 const express = require('express');
 const multer = require('multer');
 const jwt = require('jsonwebtoken');
+const mongoose = require('mongoose');
 const Trip = require('../models/Trip');
 const Photo = require('../models/Photo');
 const User = require('../models/User');
@@ -8,15 +9,15 @@ const authMiddleware = require('../middleware/authMiddleware');
 
 const router = express.Router();
 
-// multer stores uploaded files in memory (serverless-friendly, no disk needed)
+// Multer in-memory storage configuration
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5 MB per photo
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5 MB limit per photo
 });
 
 /**
- * Optional auth — if a valid token is present, set req.user.
- * If not, continue as anonymous. Used for public trip/photo viewing.
+ * Optional authentication middleware:
+ * Attaches req.user if a valid JWT is provided, otherwise continues anonymously.
  */
 function optionalAuth(req, res, next) {
   const authHeader = req.headers.authorization;
@@ -25,7 +26,7 @@ function optionalAuth(req, res, next) {
     try {
       req.user = jwt.verify(token, process.env.JWT_SECRET);
     } catch {
-      // invalid token — treat as anonymous
+      // Invalid/expired token — proceed as unauthenticated/guest
     }
   }
   next();
@@ -34,12 +35,12 @@ function optionalAuth(req, res, next) {
 router.use(optionalAuth);
 
 // ───────────────────────────────────────────────────────────────────────────
-//  PUBLIC ROUTES (no login required)
+//  PUBLIC ROUTES
 // ───────────────────────────────────────────────────────────────────────────
 
 /**
  * GET /api/trips/explore
- * Week 4 — returns all public trips for the Explore feed.
+ * Returns all public trips for the Explore feed.
  */
 router.get('/explore', async (req, res) => {
   try {
@@ -48,7 +49,6 @@ router.get('/explore', async (req, res) => {
       .sort({ createdAt: -1 })
       .lean();
 
-    // attach photo count + first photo id (for thumbnail)
     const result = await Promise.all(
       trips.map(async (trip) => {
         const photos = await Photo.find({ trip: trip._id })
@@ -70,21 +70,30 @@ router.get('/explore', async (req, res) => {
 
 /**
  * GET /api/trips/:id
- * Returns a single trip. Accessible if the trip is public OR owned by the requester.
+ * Returns a single trip by ID.
  */
 router.get('/:id', async (req, res) => {
   try {
-    const trip = await Trip.findById(req.params.id).populate('user', 'name').lean();
-    if (!trip) return res.status(404).json({ message: 'Trip not found' });
+    const { id } = req.params;
 
-    const isOwner = req.user && trip.user._id.toString() === req.user.id;
+    // Guard: Check if ID format is valid for MongoDB
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: 'Invalid Trip ID format' });
+    }
+
+    const trip = await Trip.findById(id).populate('user', 'name').lean();
+    if (!trip) {
+      return res.status(404).json({ message: 'Trip not found' });
+    }
+
+    const isOwner = Boolean(req.user && trip.user && trip.user._id.toString() === req.user.id);
     if (!trip.isPublic && !isOwner) {
       return res.status(403).json({ message: 'This trip is private' });
     }
 
     const photos = await Photo.find({ trip: trip._id })
       .sort({ createdAt: 1 })
-      .select('-image.data'); // return metadata only, not the binary
+      .select('-image.data');
 
     res.json({
       trip: { ...trip, isOwner },
@@ -97,19 +106,25 @@ router.get('/:id', async (req, res) => {
 
 /**
  * GET /api/trips/:id/photos/:photoId
- * Serves the raw image binary for a photo.
+ * Serves the raw image binary for a specific photo.
  */
 router.get('/:id/photos/:photoId', async (req, res) => {
   try {
-    const trip = await Trip.findById(req.params.id);
+    const { id, photoId } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id) || !mongoose.Types.ObjectId.isValid(photoId)) {
+      return res.status(400).json({ message: 'Invalid ID format' });
+    }
+
+    const trip = await Trip.findById(id);
     if (!trip) return res.status(404).json({ message: 'Trip not found' });
 
-    const isOwner = req.user && trip.user.toString() === req.user.id;
+    const isOwner = Boolean(req.user && trip.user.toString() === req.user.id);
     if (!trip.isPublic && !isOwner) {
       return res.status(403).json({ message: 'This trip is private' });
     }
 
-    const photo = await Photo.findById(req.params.photoId);
+    const photo = await Photo.findById(photoId);
     if (!photo || photo.trip.toString() !== trip._id.toString()) {
       return res.status(404).json({ message: 'Photo not found' });
     }
@@ -122,14 +137,14 @@ router.get('/:id/photos/:photoId', async (req, res) => {
 });
 
 // ───────────────────────────────────────────────────────────────────────────
-//  PROTECTED ROUTES (login required)
+//  PROTECTED ROUTES (Authentication Required)
 // ───────────────────────────────────────────────────────────────────────────
 
 router.use(authMiddleware);
 
 /**
  * GET /api/trips
- * Week 2 — returns the logged-in user's trips (personal timeline).
+ * Returns logged-in user's trips timeline.
  */
 router.get('/', async (req, res) => {
   try {
@@ -152,8 +167,7 @@ router.get('/', async (req, res) => {
 
 /**
  * POST /api/trips
- * Week 2 — create a new trip entry.
- * Body: { title, destination, startDate, endDate, description, rating, isPublic }
+ * Create a new trip entry.
  */
 router.post('/', async (req, res) => {
   const { title, destination, startDate, endDate, description, rating, isPublic } = req.body;
@@ -184,15 +198,19 @@ router.post('/', async (req, res) => {
 
 /**
  * PUT /api/trips/:id
- * Update a trip (title, destination, dates, description, rating, isPublic).
- * Ownership is verified before saving.
+ * Update an existing trip document.
  */
 router.put('/:id', async (req, res) => {
   try {
-    const trip = await Trip.findById(req.params.id);
+    const { id } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: 'Invalid Trip ID format' });
+    }
+
+    const trip = await Trip.findById(id);
     if (!trip) return res.status(404).json({ message: 'Trip not found' });
 
-    // Ownership check — only the trip's owner may update it
     if (trip.user.toString() !== req.user.id) {
       return res.status(403).json({ message: 'Not authorized' });
     }
@@ -215,11 +233,17 @@ router.put('/:id', async (req, res) => {
 
 /**
  * DELETE /api/trips/:id
- * Delete a trip and all its photos.
+ * Delete a trip and associated photos.
  */
 router.delete('/:id', async (req, res) => {
   try {
-    const trip = await Trip.findById(req.params.id);
+    const { id } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: 'Invalid Trip ID format' });
+    }
+
+    const trip = await Trip.findById(id);
     if (!trip) return res.status(404).json({ message: 'Trip not found' });
 
     if (trip.user.toString() !== req.user.id) {
@@ -237,11 +261,17 @@ router.delete('/:id', async (req, res) => {
 
 /**
  * POST /api/trips/:id/photos
- * Week 3 — upload photos to a trip (multipart/form-data, field name: "photos").
+ * Upload photo binaries to a trip.
  */
 router.post('/:id/photos', upload.array('photos', 10), async (req, res) => {
   try {
-    const trip = await Trip.findById(req.params.id);
+    const { id } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: 'Invalid Trip ID format' });
+    }
+
+    const trip = await Trip.findById(id);
     if (!trip) return res.status(404).json({ message: 'Trip not found' });
 
     if (trip.user.toString() !== req.user.id) {
@@ -252,9 +282,14 @@ router.post('/:id/photos', upload.array('photos', 10), async (req, res) => {
       return res.status(400).json({ message: 'No photos uploaded' });
     }
 
-    const captions = req.body.captions
-      ? JSON.parse(req.body.captions)
-      : [];
+    let captions = [];
+    if (req.body.captions) {
+      try {
+        captions = JSON.parse(req.body.captions);
+      } catch {
+        captions = [];
+      }
+    }
 
     const photos = await Promise.all(
       req.files.map((file, index) =>
@@ -281,18 +316,24 @@ router.post('/:id/photos', upload.array('photos', 10), async (req, res) => {
 
 /**
  * DELETE /api/trips/:id/photos/:photoId
- * Delete a single photo from a trip.
+ * Delete single photo from a trip.
  */
 router.delete('/:id/photos/:photoId', async (req, res) => {
   try {
-    const trip = await Trip.findById(req.params.id);
+    const { id, photoId } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id) || !mongoose.Types.ObjectId.isValid(photoId)) {
+      return res.status(400).json({ message: 'Invalid ID format' });
+    }
+
+    const trip = await Trip.findById(id);
     if (!trip) return res.status(404).json({ message: 'Trip not found' });
 
     if (trip.user.toString() !== req.user.id) {
       return res.status(403).json({ message: 'Not authorized' });
     }
 
-    const photo = await Photo.findById(req.params.photoId);
+    const photo = await Photo.findById(photoId);
     if (!photo || photo.trip.toString() !== trip._id.toString()) {
       return res.status(404).json({ message: 'Photo not found' });
     }
