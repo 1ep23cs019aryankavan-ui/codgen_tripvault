@@ -1,72 +1,131 @@
+const express = require('express');
+const router = express.Router();
 const mongoose = require('mongoose');
+const Trip = require('../models/Trip');
+const auth = require('../middleware/auth');
 
-const tripSchema = new mongoose.Schema(
-  {
-    title: {
-      type: String,
-      required: [true, 'Title is required'],
-      trim: true,
-      maxlength: [100, 'Title cannot exceed 100 characters'],
-    },
-    destination: {
-      type: String,
-      required: [true, 'Destination is required'],
-      trim: true,
-      maxlength: [100, 'Destination cannot exceed 100 characters'],
-    },
-    startDate: {
-      type: Date,
-    },
-    endDate: {
-      type: Date,
-      validate: {
-        validator: function (value) {
-          // Validate that endDate is on or after startDate
-          if (!value || !this.startDate) return true;
-          return new Date(value) >= new Date(this.startDate);
-        },
-        message: 'End date must be equal to or after start date',
-      },
-    },
-    description: {
-      type: String,
-      default: '',
-      trim: true,
-      maxlength: [2000, 'Description cannot exceed 2000 characters'],
-    },
-    rating: {
-      type: Number,
-      min: [1, 'Rating must be at least 1'],
-      max: [5, 'Rating cannot exceed 5'],
-      default: null,
-    },
-    user: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'User',
-      required: [true, 'User reference is required'],
-      index: true,
-    },
-    // References array linking to documents in the 'Photo' collection
-    photos: [
-      {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'Photo',
-      },
-    ],
-    // Week 4 — Share & Discover visibility flag
-    isPublic: {
-      type: Boolean,
-      default: false,
-      index: true,
-    },
-  },
-  { timestamps: true }
-);
+// GET /api/trips - Fetch user's trips
+router.get('/', auth, async (req, res) => {
+  try {
+    const trips = await Trip.find({ user: req.user.id })
+      .populate('photos')
+      .sort({ createdAt: -1 });
+    res.json(trips);
+  } catch (err) {
+    console.error('Error fetching trips:', err.message);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
 
-// Compound index for optimized querying of user trips sorted by date
-tripSchema.index({ user: 1, createdAt: -1 });
+// GET /api/trips/:id - Fetch single trip by ID
+router.get('/:id', auth, async (req, res) => {
+  try {
+    const { id } = req.params;
 
-// Compound index for querying public feeds sorted by creation date
-tripSchema.index({ isPublic: 1, createdAt: -1 });
+    // Validate MongoDB ObjectId format before querying DB
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: 'Invalid Trip ID format' });
+    }
 
-module.exports = mongoose.model('Trip', tripSchema);
+    const trip = await Trip.findById(id).populate('photos');
+
+    // Handle missing trip document
+    if (!trip) {
+      return res.status(404).json({ message: 'Trip not found' });
+    }
+
+    // Check ownership or public accessibility
+    if (trip.user.toString() !== req.user.id && !trip.isPublic) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+
+    res.json(trip);
+  } catch (err) {
+    console.error('Error fetching trip:', err.message);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// POST /api/trips - Create new trip
+router.post('/', auth, async (req, res) => {
+  try {
+    const { title, destination, startDate, endDate, description, rating, isPublic } = req.body;
+
+    if (!title || !destination) {
+      return res.status(400).json({ message: 'Title and destination are required' });
+    }
+
+    const newTrip = new Trip({
+      title,
+      destination,
+      startDate,
+      endDate,
+      description,
+      rating,
+      isPublic,
+      user: req.user.id,
+    });
+
+    const savedTrip = await newTrip.save();
+    res.status(201).json(savedTrip);
+  } catch (err) {
+    console.error('Error creating trip:', err.message);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// PUT /api/trips/:id - Update existing trip
+router.put('/:id', auth, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: 'Invalid Trip ID format' });
+    }
+
+    let trip = await Trip.findById(id);
+
+    if (!trip) {
+      return res.status(404).json({ message: 'Trip not found' });
+    }
+
+    if (trip.user.toString() !== req.user.id) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+
+    trip = await Trip.findByIdAndUpdate(id, { $set: req.body }, { new: true });
+    res.json(trip);
+  } catch (err) {
+    console.error('Error updating trip:', err.message);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// DELETE /api/trips/:id - Delete trip
+router.delete('/:id', auth, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: 'Invalid Trip ID format' });
+    }
+
+    const trip = await Trip.findById(id);
+
+    if (!trip) {
+      return res.status(404).json({ message: 'Trip not found' });
+    }
+
+    if (trip.user.toString() !== req.user.id) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+
+    await trip.deleteOne();
+    res.json({ message: 'Trip deleted successfully' });
+  } catch (err) {
+    console.error('Error deleting trip:', err.message);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+module.exports = router;
