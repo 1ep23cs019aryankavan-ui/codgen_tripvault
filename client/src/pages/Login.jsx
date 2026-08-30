@@ -2,6 +2,9 @@ import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import axios from 'axios'
 
+// Dynamically use the live Render URL in production, falling back to empty string (proxy) in dev
+const API_BASE_URL = import.meta.env.VITE_API_URL || ''
+
 export default function Login() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -15,7 +18,7 @@ export default function Login() {
     setLoading(true)
 
     try {
-      const { data } = await axios.post('/api/auth/login', { email, password })
+      const { data } = await axios.post(`${API_BASE_URL}/api/auth/login`, { email, password })
       // Store the JWT token (localStorage is fine per the Week 1 brief)
       localStorage.setItem('token', data.token)
       localStorage.setItem('user', JSON.stringify(data.user))
