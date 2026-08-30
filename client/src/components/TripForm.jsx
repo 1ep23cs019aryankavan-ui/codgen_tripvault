@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 
 const MAX_PHOTOS = 10
 const MAX_SIZE_MB = 5
@@ -6,29 +6,22 @@ const MAX_SIZE_MB = 5
 /**
  * Reusable form for creating and editing trips (Week 2 — Trip CRUD).
  * Now supports adding photos during create/edit (drag-and-drop + file picker).
- *
- * Props:
- *   initialTrip — existing trip object (for edit mode) or null (for create)
- *   onSubmit(tripData, photoFiles) — async; called with trip data and an
- *        array of File objects (may be empty). Returning a promise lets the
- *        form show a "Saving…" state while the parent uploads everything.
- *   submitLabel — button text
  */
 export default function TripForm({ initialTrip, onSubmit, submitLabel = 'Save trip' }) {
   const [title, setTitle] = useState(initialTrip?.title || '')
   const [destination, setDestination] = useState(initialTrip?.destination || '')
   const [startDate, setStartDate] = useState(
-    initialTrip?.startDate ? initialTrip.startDate.slice(0, 10) : ''
+    initialTrip?.startDate ? new Date(initialTrip.startDate).toISOString().slice(0, 10) : ''
   )
   const [endDate, setEndDate] = useState(
-    initialTrip?.endDate ? initialTrip.endDate.slice(0, 10) : ''
+    initialTrip?.endDate ? new Date(initialTrip.endDate).toISOString().slice(0, 10) : ''
   )
   const [description, setDescription] = useState(initialTrip?.description || '')
   const [rating, setRating] = useState(initialTrip?.rating || 0)
   const [hoverRating, setHoverRating] = useState(0)
   const [isPublic, setIsPublic] = useState(initialTrip?.isPublic || false)
 
-  // Photos — File objects selected by the user (drag-drop or file picker)
+  // Photos — File objects selected by user
   const [photos, setPhotos] = useState([])
   const [photoError, setPhotoError] = useState('')
   const [dragging, setDragging] = useState(false)
@@ -39,37 +32,36 @@ export default function TripForm({ initialTrip, onSubmit, submitLabel = 'Save tr
   // ── Photo handling ────────────────────────────────────────────────────
   const addFiles = useCallback((fileList) => {
     setPhotoError('')
-    const incoming = Array.from(fileList).filter(
-      (f) => f.type.startsWith('image/')
-    )
+    const incoming = Array.from(fileList).filter((f) => f.type.startsWith('image/'))
+
     if (incoming.length === 0) {
       setPhotoError('Please select image files only')
       return
     }
+
     setPhotos((prev) => {
       const remaining = MAX_PHOTOS - prev.length
       if (remaining <= 0) {
         setPhotoError(`You can add up to ${MAX_PHOTOS} photos per trip`)
         return prev
       }
+
       const accepted = incoming.slice(0, remaining)
       const rejected = incoming.length - accepted.length
+
       if (rejected > 0) {
         setPhotoError(
           `Added ${accepted.length} photo${accepted.length !== 1 ? 's' : ''}. ${rejected} skipped — max ${MAX_PHOTOS} per trip.`
         )
       }
-      // Enforce per-file size limit
-      const tooBig = accepted.filter((f) => f.size > MAX_SIZE_MB * 1024 * 1024)
-      if (tooBig.length > 0) {
-        setPhotoError(
-          `Some photos exceed ${MAX_SIZE_MB}MB and were skipped.`
-        )
+
+      // Enforce size limits
+      const validSize = accepted.filter((f) => f.size <= MAX_SIZE_MB * 1024 * 1024)
+      if (validSize.length < accepted.length) {
+        setPhotoError(`Some photos exceed ${MAX_SIZE_MB}MB and were skipped.`)
       }
-      return [
-        ...prev,
-        ...accepted.filter((f) => f.size <= MAX_SIZE_MB * 1024 * 1024),
-      ]
+
+      return [...prev, ...validSize]
     })
   }, [])
 
@@ -101,10 +93,11 @@ export default function TripForm({ initialTrip, onSubmit, submitLabel = 'Save tr
     e.preventDefault()
     setError('')
 
-    if (!title || !destination) {
+    if (!title.trim() || !destination.trim()) {
       setError('Please fill in the trip title and destination')
       return
     }
+
     if (startDate && endDate && new Date(endDate) < new Date(startDate)) {
       setError('End date cannot be before start date')
       return
@@ -114,11 +107,11 @@ export default function TripForm({ initialTrip, onSubmit, submitLabel = 'Save tr
     try {
       await onSubmit(
         {
-          title,
-          destination,
+          title: title.trim(),
+          destination: destination.trim(),
           startDate: startDate || undefined,
           endDate: endDate || undefined,
-          description,
+          description: description.trim(),
           rating: rating || null,
           isPublic,
         },
@@ -136,15 +129,13 @@ export default function TripForm({ initialTrip, onSubmit, submitLabel = 'Save tr
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       {error && (
-        <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-600 border border-red-100">
+        <div className="rounded-lg border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-600">
           {error}
         </div>
       )}
 
       <div>
-        <label className="mb-1.5 block text-sm font-medium text-gray-700">
-          Trip title *
-        </label>
+        <label className="mb-1.5 block text-sm font-medium text-gray-700">Trip title *</label>
         <input
           type="text"
           value={title}
@@ -156,9 +147,7 @@ export default function TripForm({ initialTrip, onSubmit, submitLabel = 'Save tr
       </div>
 
       <div>
-        <label className="mb-1.5 block text-sm font-medium text-gray-700">
-          Destination *
-        </label>
+        <label className="mb-1.5 block text-sm font-medium text-gray-700">Destination *</label>
         <input
           type="text"
           value={destination}
@@ -171,9 +160,7 @@ export default function TripForm({ initialTrip, onSubmit, submitLabel = 'Save tr
 
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <label className="mb-1.5 block text-sm font-medium text-gray-700">
-            Start date
-          </label>
+          <label className="mb-1.5 block text-sm font-medium text-gray-700">Start date</label>
           <input
             type="date"
             value={startDate}
@@ -182,9 +169,7 @@ export default function TripForm({ initialTrip, onSubmit, submitLabel = 'Save tr
           />
         </div>
         <div>
-          <label className="mb-1.5 block text-sm font-medium text-gray-700">
-            End date
-          </label>
+          <label className="mb-1.5 block text-sm font-medium text-gray-700">End date</label>
           <input
             type="date"
             value={endDate}
@@ -194,11 +179,9 @@ export default function TripForm({ initialTrip, onSubmit, submitLabel = 'Save tr
         </div>
       </div>
 
-      {/* Rating — star selector (1-5) */}
+      {/* Rating */}
       <div>
-        <label className="mb-1.5 block text-sm font-medium text-gray-700">
-          Rating
-        </label>
+        <label className="mb-1.5 block text-sm font-medium text-gray-700">Rating</label>
         <div className="flex items-center gap-2">
           <div className="flex items-center gap-0.5">
             {[1, 2, 3, 4, 5].map((star) => (
@@ -243,7 +226,7 @@ export default function TripForm({ initialTrip, onSubmit, submitLabel = 'Save tr
         />
       </div>
 
-      {/* ── Photo upload (drag-and-drop + file picker) ─────────────────── */}
+      {/* Photo Upload Zone */}
       <div>
         <label className="mb-1.5 block text-sm font-medium text-gray-700">
           Photos{' '}
@@ -252,7 +235,6 @@ export default function TripForm({ initialTrip, onSubmit, submitLabel = 'Save tr
           </span>
         </label>
 
-        {/* Drop zone */}
         <div
           onDrop={handleDrop}
           onDragOver={handleDragOver}
@@ -279,13 +261,12 @@ export default function TripForm({ initialTrip, onSubmit, submitLabel = 'Save tr
           <p className="mt-0.5 text-xs text-gray-500">
             or{' '}
             <span className="font-medium text-primary-600 underline">
-              browse from your PC or phone
+              browse from your device
             </span>
           </p>
           <p className="mt-1 text-xs text-gray-400">
             JPG, PNG, WEBP · up to {MAX_SIZE_MB}MB each · max {MAX_PHOTOS} photos
           </p>
-          {/* Hidden file input — works on desktop & mobile (opens gallery/camera) */}
           <input
             ref={fileInputRef}
             type="file"
@@ -293,22 +274,19 @@ export default function TripForm({ initialTrip, onSubmit, submitLabel = 'Save tr
             multiple
             onChange={(e) => {
               if (e.target.files) addFiles(e.target.files)
-              e.target.value = '' // reset so same file can be re-selected
+              e.target.value = ''
             }}
             className="hidden"
           />
         </div>
 
-        {photoError && (
-          <p className="mt-1.5 text-xs text-amber-600">{photoError}</p>
-        )}
+        {photoError && <p className="mt-1.5 text-xs text-amber-600">{photoError}</p>}
 
-        {/* Preview grid */}
         {photos.length > 0 && (
           <div className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-4">
             {photos.map((file, index) => (
               <PhotoPreview
-                key={`${file.name}-${index}`}
+                key={`${file.name}-${file.lastModified}-${index}`}
                 file={file}
                 onRemove={() => removePhoto(index)}
               />
@@ -317,8 +295,8 @@ export default function TripForm({ initialTrip, onSubmit, submitLabel = 'Save tr
         )}
       </div>
 
-      {/* Week 4 — Share & Discover toggle */}
-      <label className="flex items-center gap-3 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 cursor-pointer">
+      {/* Share & Discover toggle */}
+      <label className="flex cursor-pointer items-center gap-3 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
         <input
           type="checkbox"
           checked={isPublic}
@@ -326,9 +304,7 @@ export default function TripForm({ initialTrip, onSubmit, submitLabel = 'Save tr
           className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
         />
         <div>
-          <span className="text-sm font-medium text-gray-900">
-            Make this trip public
-          </span>
+          <span className="text-sm font-medium text-gray-900">Make this trip public</span>
           <p className="text-xs text-gray-500">
             Public trips appear in the Explore feed for other travelers to discover.
           </p>
@@ -338,7 +314,7 @@ export default function TripForm({ initialTrip, onSubmit, submitLabel = 'Save tr
       <button
         type="submit"
         disabled={submitting}
-        className="w-full rounded-lg bg-primary-600 py-2.5 font-medium text-white shadow-lg shadow-primary-600/30 transition hover:bg-primary-700 disabled:opacity-60 disabled:cursor-not-allowed"
+        className="w-full rounded-lg bg-primary-600 py-2.5 font-medium text-white shadow-lg shadow-primary-600/30 transition hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-60"
       >
         {submitting
           ? photos.length > 0
@@ -354,22 +330,18 @@ export default function TripForm({ initialTrip, onSubmit, submitLabel = 'Save tr
 
 function PhotoPreview({ file, onRemove }) {
   const [src, setSrc] = useState('')
-  // Generate an object URL for the thumbnail preview
-  useState(() => {
-    const url = URL.createObjectURL(file)
-    setSrc(url)
-    return () => URL.revokeObjectURL(url)
+
+  useEffect(() => {
+    const objectUrl = URL.createObjectURL(file)
+    setSrc(objectUrl)
+
+    // Properly revoke object URL on unmount or file change to prevent memory leaks
+    return () => URL.revokeObjectURL(objectUrl)
   }, [file])
 
   return (
     <div className="group relative aspect-square overflow-hidden rounded-lg border border-gray-200 bg-gray-100">
-      {src && (
-        <img
-          src={src}
-          alt={file.name}
-          className="h-full w-full object-cover"
-        />
-      )}
+      {src && <img src={src} alt={file.name} className="h-full w-full object-cover" />}
       <button
         type="button"
         onClick={onRemove}
@@ -378,7 +350,7 @@ function PhotoPreview({ file, onRemove }) {
       >
         <XIcon />
       </button>
-      <span className="absolute bottom-0 inset-x-0 truncate bg-gradient-to-t from-black/60 to-transparent px-1.5 py-0.5 text-[10px] text-white opacity-0 transition group-hover:opacity-100">
+      <span className="absolute inset-x-0 bottom-0 truncate bg-gradient-to-t from-black/60 to-transparent px-1.5 py-0.5 text-[10px] text-white opacity-0 transition group-hover:opacity-100">
         {file.name}
       </span>
     </div>
@@ -425,7 +397,16 @@ function UploadIcon() {
 
 function XIcon() {
   return (
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width="12"
+      height="12"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <line x1="18" y1="6" x2="6" y2="18" />
       <line x1="6" y1="6" x2="18" y2="18" />
     </svg>
