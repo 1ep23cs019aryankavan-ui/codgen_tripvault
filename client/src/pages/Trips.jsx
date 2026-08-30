@@ -4,6 +4,9 @@ import axios from 'axios'
 import Navbar from '../components/Navbar'
 import TripForm from '../components/TripForm'
 
+// Dynamically use live Render URL or fallback to relative URL for local proxy
+const API_BASE_URL = import.meta.env.VITE_API_URL || ''
+
 export default function Trips() {
   const [trips, setTrips] = useState([])
   const [loading, setLoading] = useState(true)
@@ -20,10 +23,11 @@ export default function Trips() {
   const fetchTrips = async () => {
     try {
       const token = localStorage.getItem('token')
-      const { data } = await axios.get('/api/trips', {
+      const { data } = await axios.get(`${API_BASE_URL}/api/trips`, {
         headers: { Authorization: `Bearer ${token}` },
       })
-      setTrips(data.trips)
+      // Safely handle if data is directly an array or wrapped in an object { trips: [...] }
+      setTrips(Array.isArray(data) ? data : data.trips || [])
     } catch (err) {
       setError(err.response?.data?.message || 'Failed to load trips')
     } finally {
@@ -34,7 +38,7 @@ export default function Trips() {
   const handleCreate = async (tripData, photoFiles) => {
     try {
       const token = localStorage.getItem('token')
-      const { data } = await axios.post('/api/trips', tripData, {
+      const { data } = await axios.post(`${API_BASE_URL}/api/trips`, tripData, {
         headers: { Authorization: `Bearer ${token}` },
       })
 
@@ -44,7 +48,8 @@ export default function Trips() {
         for (const file of photoFiles) {
           formData.append('photos', file)
         }
-        await axios.post(`/api/trips/${data.trip._id}/photos`, formData, {
+        const tripId = data.trip?._id || data._id
+        await axios.post(`${API_BASE_URL}/api/trips/${tripId}/photos`, formData, {
           headers: {
             Authorization: `Bearer ${token}`,
             'Content-Type': 'multipart/form-data',
@@ -163,7 +168,7 @@ export default function Trips() {
                   </div>
                   <div className="flex items-center gap-1 text-sm text-gray-400">
                     <CameraIcon />
-                    {trip.photoCount}
+                    {trip.photos?.length || trip.photoCount || 0}
                   </div>
                 </div>
                 {trip.description && (
