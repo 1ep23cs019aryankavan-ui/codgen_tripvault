@@ -1,9 +1,23 @@
 const mongoose = require('mongoose');
 
-// Week 2 — Trip Management (CRUD)
-// Schema follows the Week 2 task specification exactly:
-//   title, destination, startDate, endDate, description, rating, user
-// `isPublic` is added for Week 4 (Share & Discover) and is optional.
+// Sub-schema for photos directly stored/referenced within a trip
+const photoSchema = new mongoose.Schema(
+  {
+    url: {
+      type: String,
+      required: true,
+    },
+    filename: {
+      type: String,
+    },
+    caption: {
+      type: String,
+      default: '',
+    },
+  },
+  { timestamps: true }
+);
+
 const tripSchema = new mongoose.Schema(
   {
     title: {
@@ -21,6 +35,14 @@ const tripSchema = new mongoose.Schema(
     },
     endDate: {
       type: Date,
+      validate: {
+        validator: function (value) {
+          // Validate that endDate is on or after startDate
+          if (!value || !this.startDate) return true;
+          return value >= this.startDate;
+        },
+        message: 'End date must be equal to or after start date',
+      },
     },
     description: {
       type: String,
@@ -36,14 +58,22 @@ const tripSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
       required: true,
+      index: true, // Speeds up queries for fetching user-specific trips
     },
+    // Photos associated with this trip
+    photos: [photoSchema],
+
     // Week 4 — Share & Discover: toggle a trip's visibility
     isPublic: {
       type: Boolean,
       default: false,
+      index: true, // Speeds up queries for public exploration feed
     },
   },
   { timestamps: true }
 );
+
+// Compound index for querying public trips sorted by creation date
+tripSchema.index({ isPublic: 1, createdAt: -1 });
 
 module.exports = mongoose.model('Trip', tripSchema);
