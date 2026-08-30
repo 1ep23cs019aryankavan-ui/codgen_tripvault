@@ -3,6 +3,9 @@ import { Link } from 'react-router-dom'
 import axios from 'axios'
 import Navbar from '../components/Navbar'
 
+// Dynamically use live Render URL or fallback to relative URL for local proxy
+const API_BASE_URL = import.meta.env.VITE_API_URL || ''
+
 export default function Dashboard() {
   const [user, setUser] = useState(null)
   const [stats, setStats] = useState({ trips: 0, photos: 0 })
@@ -15,19 +18,23 @@ export default function Dashboard() {
     // Fetch user info + trip stats
     const token = localStorage.getItem('token')
     Promise.all([
-      axios.get('/api/auth/me', {
+      axios.get(`${API_BASE_URL}/api/auth/me`, {
         headers: { Authorization: `Bearer ${token}` },
       }),
-      axios.get('/api/trips', {
+      axios.get(`${API_BASE_URL}/api/trips`, {
         headers: { Authorization: `Bearer ${token}` },
       }),
     ])
       .then(([meRes, tripsRes]) => {
-        setUser(meRes.data.user)
-        const trips = tripsRes.data.trips
+        setUser(meRes.data.user || meRes.data)
+        
+        // Safely extract trips whether returned directly or as an object property
+        const tripsData = tripsRes.data
+        const trips = Array.isArray(tripsData) ? tripsData : tripsData.trips || []
+
         setStats({
           trips: trips.length,
-          photos: trips.reduce((sum, t) => sum + (t.photoCount || 0), 0),
+          photos: trips.reduce((sum, t) => sum + (t.photos?.length || t.photoCount || 0), 0),
         })
       })
       .catch(() => {
