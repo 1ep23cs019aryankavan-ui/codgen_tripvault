@@ -3,6 +3,9 @@ import { Link } from 'react-router-dom'
 import axios from 'axios'
 import Navbar from '../components/Navbar'
 
+// Dynamically use live Render URL or fallback to relative URL for local proxy
+const API_BASE_URL = import.meta.env.VITE_API_URL || ''
+
 export default function Explore() {
   const [trips, setTrips] = useState([])
   const [loading, setLoading] = useState(true)
@@ -19,10 +22,11 @@ export default function Explore() {
     try {
       // Explore is a public endpoint — send token if available (optional)
       const token = localStorage.getItem('token')
-      const { data } = await axios.get('/api/trips/explore', {
+      const { data } = await axios.get(`${API_BASE_URL}/api/trips/explore`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       })
-      setTrips(data.trips)
+      // Handle array or wrapped object response safely
+      setTrips(Array.isArray(data) ? data : data.trips || [])
     } catch (err) {
       setError(err.response?.data?.message || 'Failed to load explore feed')
     } finally {
@@ -94,7 +98,7 @@ export default function Explore() {
                 {/* Cover photo */}
                 {trip.coverPhotoId ? (
                   <img
-                    src={`/api/trips/${trip._id}/photos/${trip.coverPhotoId}`}
+                    src={`${API_BASE_URL}/api/trips/${trip._id}/photos/${trip.coverPhotoId}`}
                     alt={trip.title}
                     className="aspect-video w-full object-cover"
                   />
@@ -131,10 +135,10 @@ export default function Explore() {
 
                   <div className="mt-3 flex items-center justify-between border-t border-gray-100 pt-3">
                     <span className="flex items-center gap-1.5 text-xs text-gray-500">
-                      <UserIcon /> {trip.user?.name || 'Anonymous'}
+                      <UserIcon /> {trip.user?.name || trip.userId?.name || 'Anonymous'}
                     </span>
                     <span className="flex items-center gap-1 text-xs text-gray-400">
-                      <CameraIcon /> {trip.photoCount}
+                      <CameraIcon /> {trip.photos?.length || trip.photoCount || 0}
                     </span>
                   </div>
                 </div>
