@@ -1,34 +1,18 @@
 const mongoose = require('mongoose');
 
-// Sub-schema for photos directly stored/referenced within a trip
-const photoSchema = new mongoose.Schema(
-  {
-    url: {
-      type: String,
-      required: true,
-    },
-    filename: {
-      type: String,
-    },
-    caption: {
-      type: String,
-      default: '',
-    },
-  },
-  { timestamps: true }
-);
-
 const tripSchema = new mongoose.Schema(
   {
     title: {
       type: String,
       required: [true, 'Title is required'],
       trim: true,
+      maxlength: [100, 'Title cannot exceed 100 characters'],
     },
     destination: {
       type: String,
       required: [true, 'Destination is required'],
       trim: true,
+      maxlength: [100, 'Destination cannot exceed 100 characters'],
     },
     startDate: {
       type: Date,
@@ -39,7 +23,7 @@ const tripSchema = new mongoose.Schema(
         validator: function (value) {
           // Validate that endDate is on or after startDate
           if (!value || !this.startDate) return true;
-          return value >= this.startDate;
+          return new Date(value) >= new Date(this.startDate);
         },
         message: 'End date must be equal to or after start date',
       },
@@ -47,33 +31,42 @@ const tripSchema = new mongoose.Schema(
     description: {
       type: String,
       default: '',
+      trim: true,
+      maxlength: [2000, 'Description cannot exceed 2000 characters'],
     },
     rating: {
       type: Number,
-      min: 1,
-      max: 5,
+      min: [1, 'Rating must be at least 1'],
+      max: [5, 'Rating cannot exceed 5'],
       default: null,
     },
     user: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
-      required: true,
-      index: true, // Speeds up queries for fetching user-specific trips
+      required: [true, 'User reference is required'],
+      index: true,
     },
-    // Photos associated with this trip
-    photos: [photoSchema],
-
-    // Week 4 — Share & Discover: toggle a trip's visibility
+    // References array linking to documents in the 'Photo' collection
+    photos: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Photo',
+      },
+    ],
+    // Week 4 — Share & Discover visibility flag
     isPublic: {
       type: Boolean,
       default: false,
-      index: true, // Speeds up queries for public exploration feed
+      index: true,
     },
   },
   { timestamps: true }
 );
 
-// Compound index for querying public trips sorted by creation date
+// Compound index for optimized querying of user trips sorted by date
+tripSchema.index({ user: 1, createdAt: -1 });
+
+// Compound index for querying public feeds sorted by creation date
 tripSchema.index({ isPublic: 1, createdAt: -1 });
 
 module.exports = mongoose.model('Trip', tripSchema);
