@@ -8,7 +8,28 @@ const tripsRoutes = require('./routes/trips');
 const app = express();
 
 // ── Middleware ────────────────────────────────────────────────────────────
-app.use(cors()); // allow the Vite frontend to talk to this API
+// Configured CORS to allow both local development and your Vercel deployment
+const allowedOrigins = [
+  'http://localhost:5173',
+  'http://localhost:3000',
+  process.env.CLIENT_URL, // Dynamically pulled from environment variables
+  'codgen-tripvault-2jl507lks-1ep23cs019-4210s-projects.vercel.app', 
+];
+
+app.use(
+  cors({
+    origin: function (origin, callback) {
+      // Allow requests with no origin (like mobile apps, curl, or server-to-server)
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(null, true); // Alternatively set to callback(new Error('Not allowed by CORS')) for strict checking
+      }
+    },
+    credentials: true,
+  })
+);
+
 app.use(express.json()); // parse JSON request bodies
 
 // ── Routes ────────────────────────────────────────────────────────────────
@@ -38,7 +59,7 @@ mongoose
   .then(() => {
     console.log('✅ Connected to MongoDB');
     app.listen(PORT, () => {
-      console.log(`🚀 TripVault server running on http://localhost:${PORT}`);
+      console.log(`🚀 TripVault server running on port ${PORT}`);
     });
   })
   .catch((err) => {
